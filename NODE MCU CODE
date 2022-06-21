@@ -1,0 +1,200 @@
+#define BLYNK_PRINT Serial
+#include <BlynkSimpleEsp8266.h>
+#include <SoftwareSerial.h>
+#include <ESP8266WiFi.h>
+
+/*    RS pin of LCD — D7 pin of NodeMCU
+    EN pin of LCD — D8 pin of NodeMCU
+    D4 pin of LCD — D1 pin of NodeMCU
+    D5 pin of LCD — D2 pin of NodeMCU
+    D6 pin of LCD — D3 pin of NodeMCU
+    D7 pin of LCD — D4 pin of NodeMCU
+*/
+#include <LiquidCrystal.h>
+LiquidCrystal lcd(D7, D8, D1, D2, D3, D4);
+
+SoftwareSerial LORA(14, 12);    //D5,D6//tx rx
+
+String LORA_data;
+
+char auth[] = "g7f_CYS968-gfQBz79RezT-jSY0TaZPY"; bool dataEnd = false;
+
+char ssid[] = "embedded";
+char pass[] = "embedded123";
+
+int water, temp, light, motor, pump, fan, s_gas, d_gas, vib;
+
+String phone_number_1 = "9989810029";
+
+BLYNK_WRITE(V11) {
+  int pin1 = param.asInt();
+  if (pin1 == 1) {
+    LORA.println("1");
+    //Serial.println("LIGHT IS ON");
+  } else {
+    LORA.println("0");
+    //Serial.println("LIGHT IS OFF");
+  }
+}
+
+void setup() {
+  Serial.begin(9600);
+  LORA.begin(115200);
+  Blynk.begin(auth, ssid, pass);
+  send_msg("System started", phone_number_1);
+  lcd.begin(16, 2);
+  lcd.clear();
+  lcd.print("System Started..");
+}
+void send_msg(String msg, String phone_number) {
+  Serial.flush();
+  Serial.print("Sending SMS : ");
+  Serial.println(msg);
+  Serial.println("AT+CMGF=1");
+  delay(2000);
+  Serial.println("AT+CMGS=\"+91" + String(phone_number) + "\"\r");
+  delay(2000);
+  Serial.println(msg);
+  delay(100);
+  Serial.println((char)26);
+  delay(2000);
+}
+void loop() {
+  readLORA();
+  Blynk.run();
+  delay(1000);
+}
+void readLORA() {
+  while (LORA.available()) {
+    char c = (char)LORA.read();
+    //    Serial.print(c);
+    if (c == ';') {
+      dataEnd = true;
+      //      Serial.println();
+      break;
+    }
+    LORA_data = LORA_data + c ;
+  }
+  if (dataEnd == true) {
+    String water_level = getValue(LORA_data, ',', 0);
+    String temp_data = getValue(LORA_data, ',', 1);
+    String light_state = getValue(LORA_data, ',', 2);
+    String motor_state = getValue(LORA_data, ',', 3);
+    String pump_state = getValue(LORA_data, ',', 4);
+    String fan_state = getValue(LORA_data, ',', 5);
+    String gas_data = getValue(LORA_data, ',', 6);
+    String gas_state = getValue(LORA_data, ',', 7);
+    String vib_state = getValue(LORA_data, ',', 8);
+
+    //    Serial.print(water_level); Serial.print(",");
+    //    Serial.print(temp_data); Serial.print(",");
+    //    Serial.print(light_state); Serial.print(",");
+    //    Serial.print(motor_state); Serial.print(",");
+    //    Serial.print(pump_state); Serial.print(",");
+    //    Serial.print(fan_state); Serial.print(",");
+    //    Serial.println(vib_state);
+
+    water = water_level.toInt();
+    temp = temp_data.toInt();
+    light = light_state.toInt();
+    motor = motor_state.toInt();
+    pump = pump_state.toInt();
+    fan = fan_state.toInt();
+    vib = vib_state.toInt();
+    s_gas = gas_state.toInt();
+    d_gas = gas_data.toInt();
+
+    //uncomment for serial monitor
+    //    Serial.print(water); Serial.print(",");
+    //    Serial.print(temp); Serial.print(",");
+    //    Serial.print(light); Serial.print(",");
+    //    Serial.print(motor); Serial.print(",");
+    //    Serial.print(pump); Serial.print(",");
+    //    Serial.print(fan); Serial.print(",");
+    //    Serial.print(s_gas); Serial.print(",");
+    //    Serial.print(d_gas); Serial.print(",");
+    //    Serial.println(vib);
+
+    Blynk.virtualWrite(V0, water);
+    Blynk.virtualWrite(V1, temp);
+
+    if (light == 1) {
+      Blynk.virtualWrite(V2, "Live detected, Light ON");
+      Blynk.notify("Live ON");
+      lcd.clear();
+      lcd.print("Live ON..");
+    } else {
+      Blynk.virtualWrite(V2, "No Live, Light OFF");
+    }
+
+    if (motor == 1) {
+      Blynk.virtualWrite(V3, "Water low , Motor ON");
+      //      Blynk.notify("Motor ON");
+      lcd.clear();
+      lcd.print("Motor ON..");
+    } else {
+      Blynk.virtualWrite(V3, "Water OK , Motor OFF");
+      Blynk.notify("Motor OFF");
+    }
+
+    if (pump == 1) {
+      Blynk.virtualWrite(V4, "Fire detected, Pump ON");
+      Blynk.notify("PUMP ON");
+      lcd.clear();
+      lcd.print("PUMP ON..");
+      send_msg("Fire detected..", phone_number_1);
+    } else {
+      Blynk.virtualWrite(V4, "No Fire, Pump OFF");
+    }
+
+    if (fan == 1) {
+      Blynk.virtualWrite(V5, "Temperature high, Fan ON");
+      Blynk.notify("Fan ON");
+      lcd.clear();
+      lcd.print("FAN ON..");
+    } else {
+      Blynk.virtualWrite(V5, "Temperature OK, Fan OFF");
+    }
+
+    if (vib == 1) {
+      Blynk.virtualWrite(V6, "Theft detected");
+      Blynk.notify("Theft detected");
+      lcd.clear();
+      lcd.print("Thef t detected..");
+      send_msg("Theft detected..", phone_number_1);
+    } else {
+      Blynk.virtualWrite(V6, "No Theft");
+    }
+
+    Blynk.virtualWrite(V7, d_gas);
+
+    if (s_gas == 1) {
+      Blynk.virtualWrite(V8, "Gas leakage detected");
+      Blynk.notify("Gas leakage detected");
+      lcd.clear();
+      lcd.print("Gas detected..");
+    } else {
+      Blynk.virtualWrite(V8, "No gas leak");
+    }
+
+
+    LORA_data = "";
+    dataEnd = false;
+  }
+}
+
+String getValue(String data, char separator, int index)
+{
+  int found = 0;
+  int strIndex[] = { 0, -1 };
+  int maxIndex = data.length() - 1;
+
+  for (int i = 0; i <= maxIndex && found <= index; i++) {
+    if (data.charAt(i) == separator || i == maxIndex) {
+      found++;
+      strIndex[0] = strIndex[1] + 1;
+      strIndex[1] = (i == maxIndex) ? i + 1 : i;
+    }
+  }
+  return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
+}
