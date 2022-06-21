@@ -1,0 +1,178 @@
+#include <OneWire.h>
+#include <Ultrasonic.h>
+#include <SoftwareSerial.h>
+#include <DallasTemperature.h>
+
+#define VIBR_SENSOR      2
+#define ULTRASONIC_TRIG  3
+#define ULTRASONIC_ECHO  4
+#define LORA_RX          5
+#define LORA_TX          6
+#define ONE_WIRE_BUS     7
+#define FIRE_SENSOR      8
+#define PIR_SENSOR       9
+
+#define BUZZER           14
+#define MOTOR_RELAY      15
+#define PUMP_RELAY       16
+#define FAN_RELAY        17
+#define LIGHT_RELAY      18
+#define GAS_SENSOR       A5
+
+#define ON  0
+#define OFF 1
+
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature ds18b20(&oneWire);
+SoftwareSerial LORA(LORA_RX, LORA_TX);
+Ultrasonic ULTRASONIC(ULTRASONIC_TRIG, ULTRASONIC_ECHO);
+
+int fire_data, live_data, water_level, temp_data, gas_data, control_data;
+int pump_state, motor_state, fan_state, light_state, vib_state, gas_state;
+
+long debouncing_time = 10;
+volatile unsigned long last_micros;
+
+void setup() {
+
+  Serial.begin(115200);
+  LORA.begin(115200);
+  ds18b20.begin();
+
+  pinMode(VIBR_SENSOR, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(VIBR_SENSOR), vibISR, RISING);
+  pinMode(PIR_SENSOR,  INPUT);
+  pinMode(FIRE_SENSOR, INPUT);
+
+  pinMode(MOTOR_RELAY, OUTPUT);
+  pinMode(PUMP_RELAY,  OUTPUT);
+  pinMode(FAN_RELAY,   OUTPUT);
+  pinMode(LIGHT_RELAY, OUTPUT);
+  pinMode(BUZZER,      OUTPUT);
+
+  digitalWrite(MOTOR_RELAY, OFF);
+  digitalWrite(PUMP_RELAY,  OFF);
+  digitalWrite(FAN_RELAY,   OFF);
+  digitalWrite(LIGHT_RELAY, OFF);
+  digitalWrite(BUZZER,      LOW);
+}
+
+void vibISR() {
+  if ((long)(micros() - last_micros) >= debouncing_time * 5000) {
+    Serial.println("Vibration detected");
+    vib_state = 1;
+    last_micros = micros();
+  }
+}
+
+void readLora() {
+  while (LORA.available()) {
+    char c = (char)LORA.read();
+    
+    if (c == '1') {
+      control_data = 1;
+      Serial.println("Device ON");
+    }  
+    if (c == '0') {
+      control_data = 0;
+      Serial.println("Device OFF");
+    }
+  }
+}
+
+void loop() {
+  readLora();
+
+  water_level = ULTRASONIC.distanceRead();
+  ds18b20.requestTemperatures();
+  temp_data = ds18b20.getTempCByIndex(0);
+  live_data = digitalRead(PIR_SENSOR);
+  fire_data = digitalRead(FIRE_SENSOR);
+  gas_data = analogRead(GAS_SENSOR);
+
+  Serial.print("Distance   :");  Serial.println(water_level);
+  Serial.print("Temperature:");  Serial.println(temp_data);
+  Serial.print("Live       :");  Serial.println(live_data);
+  Serial.print("Fire       :");  Serial.println(fire_data);
+  Serial.print("Vibration  :");  Serial.println(vib_state);
+  Serial.print("Gas        :");  Serial.println(gas_data);
+
+  if (live_data == 1 || control_data == 1) {
+    digitalWrite(LIGHT_RELAY, ON);
+    light_state = 1;
+    delay(100);
+  }
+  if (live_data == 0 && control_data == 0) {
+     digitalWrite(LIGHT_RELAY, OFF);
+    light_state = 0;
+    delay(10);
+  }
+
+  if (water_level >80) {//water low
+    digitalWrite(MOTOR_RELAY, ON);
+    motor_state = 1;
+    delay(100);
+  }
+  if (water_level < 50) {//water high
+    digitalWrite(MOTOR_RELAY, OFF);
+    motor_state = 0;
+    delay(100);
+  }
+  if (gas_data > 400) {//gas high
+    gas_state = 1;
+    delay(100);
+  }
+  if (gas_data < 400) {//gas low
+    gas_state = 0;
+    delay(100);
+  }
+
+  if (fire_data == ON) {
+    digitalWrite(PUMP_RELAY, ON);
+    pump_state = 1;
+    digitalWrite(BUZZER, HIGH);
+    delay(100);
+  } else {
+    digitalWrite(PUMP_RELAY, OFF);
+    pump_state = 0;
+    digitalWrite(BUZZER, LOW);
+    delay(10);
+  }
+
+  if (temp_data > 35 && temp_data < 50) {
+    digitalWrite(FAN_RELAY, ON);
+    fan_state = 1;
+    delay(100);
+  } else {
+    digitalWrite(FAN_RELAY, OFF);
+    fan_state = 0;
+    delay(10);
+  }
+
+  if (vib_state == 1 || gas_state == 1) {
+    digitalWrite(BUZZER, HIGH);
+    delay(100);
+  } else {
+    digitalWrite(BUZZER, LOW);
+    delay(10);
+  }
+
+  LORA.print(water_level); LORA.print(",");
+  LORA.print(temp_data);   LORA.print(",");
+  LORA.print(light_state); LORA.print(",");
+  LORA.print(motor_state); LORA.print(",");
+  LORA.print(pump_state);  LORA.print(",");
+  LORA.print(fan_state);   LORA.print(",");
+  LORA.print(gas_data);    LORA.print(",");
+  LORA.print(gas_state);   LORA.print(",");
+  LORA.print(vib_state);   LORA.println(";");
+  Serial.println("***************************************");
+  Serial.print(water_level); Serial.print(",");
+  Serial.print(temp_data);   Serial.print(",");
+  Serial.print(light_state); Serial.print(",");
+  Serial.print(motor_state); Serial.print(",");
+  Serial.print(pump_state);  Serial.print(",");
+  Serial.print(fan_state);   Serial.print(",");
+  Serial.print(gas_data);    Serial.print(",");
+  Serial.print(gas_state);   Serial.print(",");
+  Serial.print(vib_state);   Serial.println(";");
