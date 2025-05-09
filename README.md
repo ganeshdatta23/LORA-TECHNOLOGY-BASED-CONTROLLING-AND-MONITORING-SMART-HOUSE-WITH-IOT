@@ -38,7 +38,7 @@ This project demonstrates an innovative solution for **home automation** using *
 - **LoRa SX1278 Modules**
 - **ESP8266 / NodeMCU**
 - **Arduino IDE**
-- **Android Studio (Java/XML)**
+- **Blink IoT App**
 - **IoT Protocols (HTTP/MQTT, etc.)**
 
 ---
